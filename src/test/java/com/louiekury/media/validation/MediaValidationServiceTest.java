@@ -94,6 +94,51 @@ class MediaValidationServiceTest {
         valid(MediaUsage.POST_ATTACHMENT, "large-ftyp.mp4", "video/mp4", box, MediaType.MP4);
     }
 
+    private static final byte[] AUDIO_MP4 = {0, 0, 0, 20, 'f', 't', 'y', 'p', 'M', '4', 'A', ' ', 0, 0, 0, 0, 'm', 'p', '4', '2'};
+
+    @Test void rejectsAudioMajorBrandInDirectDetection() {
+        var detector = new FileSignatureDetector();
+        assertNull(detector.detect(AUDIO_MP4, AUDIO_MP4.length));
+    }
+
+    @Test void rejectsAudioMajorBrandInFragmentedScanner() {
+        var scanner = new FileSignatureDetector().mp4Scanner();
+        for (byte value : AUDIO_MP4) scanner.accept(new byte[] {value}, 1);
+        assertNull(scanner.result());
+    }
+
+    @Test void rejectsAudioMajorBrandInService() {
+        failure(ValidationFailure.UNKNOWN_CONTENT, MediaUsage.POST_ATTACHMENT, "audio.mp4", "video/mp4", AUDIO_MP4);
+    }
+
+    @Test void rejectsInvalidFileTypeBoxWithoutReadingOrWritingWholeFile() {
+        for (byte[] invalid : new byte[][] {
+                {0, 0, 0, 12, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm', 0, 0, 0, 0},
+                {0, 0, 0, 20, 'n', 'o', 'p', 'e', 'i', 's', 'o', 'm', 0, 0, 0, 0}}) {
+            rejectsInvalidFileTypeBoxWithoutReadingOrWritingWholeFile(invalid);
+        }
+    }
+
+    private void rejectsInvalidFileTypeBoxWithoutReadingOrWritingWholeFile(byte[] invalid) {
+        InputStream source = sized(invalid, 10_000_000);
+        long[] read = {0}, written = {0};
+        InputStream counted = new FilterInputStream(source) {
+            @Override public int read() throws IOException { int value = in.read(); if (value >= 0) read[0]++; return value; }
+            @Override public int read(byte[] b, int off, int len) throws IOException {
+                int n = in.read(b, off, len); if (n > 0) read[0] += n; return n;
+            }
+        };
+        OutputStream output = new OutputStream() {
+            @Override public void write(int b) { written[0]++; }
+            @Override public void write(byte[] b, int off, int len) { written[0] += len; }
+        };
+        var error = assertThrows(MediaValidationException.class, () -> service.validate(MediaUsage.POST_ATTACHMENT,
+                "invalid.mp4", "video/mp4", counted, output));
+        assertEquals(ValidationFailure.UNKNOWN_CONTENT, error.getReason());
+        assertTrue(read[0] <= 4096, "확실히 잘못된 헤더를 확인한 후 파일 전체를 읽으면 안 됩니다");
+        assertTrue(written[0] <= 4096, "잘못된 파일 전체를 임시 출력에 기록하면 안 됩니다");
+    }
+
     @Test void rejectsTruncatedLargeFileTypeBoxAndImageBrandBeyondReadBuffer() {
         byte[] box = new byte[4100];
         System.arraycopy(MP4, 0, box, 0, MP4.length);

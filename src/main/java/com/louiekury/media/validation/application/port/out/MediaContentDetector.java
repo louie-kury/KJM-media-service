@@ -9,6 +9,7 @@ public interface MediaContentDetector {
 
     interface Mp4Scanner {
         void accept(byte[] bytes, int length);
+        boolean rejected();
         MediaType result();
     }
 }

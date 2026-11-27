@@ -42,7 +42,10 @@ public class MediaValidationService {
         if (actualType != null && actualType != filenameType) throw new MediaValidationException(ValidationFailure.TYPE_MISMATCH);
         MediaContentDetector.Mp4Scanner mp4 = filenameType == MediaType.MP4 ? detector.mp4Scanner() : null;
         if (mp4 == null && actualType == null) throw new MediaValidationException(ValidationFailure.UNKNOWN_CONTENT);
-        if (mp4 != null) mp4.accept(prefix, length);
+        if (mp4 != null) {
+            mp4.accept(prefix, length);
+            if (mp4.rejected()) throw new MediaValidationException(ValidationFailure.UNKNOWN_CONTENT);
+        }
 
         long size = length;
         write(stagedOutput, prefix, length);
@@ -52,7 +55,10 @@ public class MediaValidationService {
             if (count < 0) break;
             size += count;
             if (size > filenameType.getMaxBytes()) throw new MediaValidationException(ValidationFailure.FILE_TOO_LARGE);
-            if (mp4 != null) mp4.accept(buffer, count);
+            if (mp4 != null) {
+                mp4.accept(buffer, count);
+                if (mp4.rejected()) throw new MediaValidationException(ValidationFailure.UNKNOWN_CONTENT);
+            }
             write(stagedOutput, buffer, count);
         }
         if (mp4 != null && mp4.result() == null) throw new MediaValidationException(ValidationFailure.UNKNOWN_CONTENT);

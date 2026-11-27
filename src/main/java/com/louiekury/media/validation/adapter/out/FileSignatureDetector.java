@@ -46,10 +46,15 @@ public class FileSignatureDetector implements MediaContentDetector {
                     if (offset >= 4 && offset < 8) continue; // minor version
                     brand[(int) (offset % 4)] = value;
                     if (offset % 4 == 3) {
-                        if (isImageBrand(brand, 0) || (offset == 3 && matches(brand, 0, "qt  "))) invalid = true;
+                        if (isImageBrand(brand, 0) || (offset == 3 && isRejectedMajorBrand(brand, 0))) invalid = true;
                         mp4 |= isMp4Brand(brand, 0);
                     }
                 }
+            }
+
+            @Override
+            public boolean rejected() {
+                return invalid || (boxSize >= headerSize + 8 && position >= boxSize && !mp4);
             }
 
             @Override
@@ -75,7 +80,7 @@ public class FileSignatureDetector implements MediaContentDetector {
             }
             int brandsStart = headerSize + 8;
             if (size < brandsStart || size > length || (size - brandsStart) % 4 != 0) return null;
-            if (isImageBrand(prefix, headerSize) || matches(prefix, headerSize, "qt  ")) return null;
+            if (isImageBrand(prefix, headerSize) || isRejectedMajorBrand(prefix, headerSize)) return null;
             boolean mp4 = isMp4Brand(prefix, headerSize);
             for (int offset = brandsStart; offset < size; offset += 4) {
                 if (isImageBrand(prefix, offset)) return null;
@@ -88,6 +93,10 @@ public class FileSignatureDetector implements MediaContentDetector {
 
     private boolean isImageBrand(byte[] bytes, int offset) {
         return IMAGE_BRANDS.contains(new String(bytes, offset, 4, StandardCharsets.US_ASCII));
+    }
+
+    private boolean isRejectedMajorBrand(byte[] bytes, int offset) {
+        return matches(bytes, offset, "qt  ") || matches(bytes, offset, "M4A ");
     }
 
     private boolean isMp4Brand(byte[] bytes, int offset) {
