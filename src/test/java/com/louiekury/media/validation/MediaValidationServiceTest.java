@@ -148,6 +148,51 @@ class MediaValidationServiceTest {
         failure(ValidationFailure.UNKNOWN_CONTENT, MediaUsage.POST_ATTACHMENT, "a.mp4", "video/mp4", box);
     }
 
+    @Test void rejectsOversizeDeclaredNormalFileTypeBoxEarly() {
+        assertOversizeFileTypeBoxRejectedEarly(false);
+    }
+
+    @Test void rejectsOversizeDeclaredExtendedFileTypeBoxEarlyWithFragmentedHeader() {
+        assertOversizeFileTypeBoxRejectedEarly(true);
+    }
+
+    @Test void acceptsFileTypeBoxAtVideoSizeLimit() {
+        for (boolean extended : new boolean[] {false, true}) {
+            var result = service.validate(MediaUsage.POST_ATTACHMENT, "a.mp4", "video/mp4",
+                    sized(fileTypeBox(100_000_000L, extended), 100_000_000L), OutputStream.nullOutputStream());
+            assertEquals(100_000_000L, result.getSize());
+        }
+    }
+
+    private void assertOversizeFileTypeBoxRejectedEarly(boolean extended) {
+        InputStream source = sized(fileTypeBox(100_000_004L, extended), 100_000_004L);
+        long[] read = {0}, written = {0};
+        InputStream counted = new FilterInputStream(source) {
+            @Override public int read() throws IOException { int value = in.read(); if (value >= 0) read[0]++; return value; }
+            @Override public int read(byte[] b, int off, int len) throws IOException {
+                int n = in.read(b, off, extended ? Math.min(len, 3) : len);
+                if (n > 0) read[0] += n;
+                return n;
+            }
+        };
+        OutputStream output = new OutputStream() {
+            @Override public void write(int b) { written[0]++; }
+            @Override public void write(byte[] b, int off, int len) { written[0] += len; }
+        };
+        assertThrows(MediaValidationException.class, () -> service.validate(MediaUsage.POST_ATTACHMENT,
+                "a.mp4", "video/mp4", counted, output));
+        assertTrue(read[0] <= 4096, "파일 제한을 초과하는 ftyp 크기 확인 후 추가로 읽으면 안 됩니다");
+        assertEquals(0, written[0], "파일 제한을 초과하는 ftyp는 임시 출력에 쓰면 안 됩니다");
+    }
+
+    private byte[] fileTypeBox(long size, boolean extended) {
+        var bytes = java.nio.ByteBuffer.allocate(extended ? 24 : 16);
+        bytes.putInt(extended ? 1 : (int) size).put(new byte[] {'f', 't', 'y', 'p'});
+        if (extended) bytes.putLong(size);
+        bytes.put(new byte[] {'i', 's', 'o', 'm'}).putInt(0);
+        return bytes.array();
+    }
+
     @Test void rejectsOversizeAfterWritingPartialTemporaryOutput() {
         var out = new ByteArrayOutputStream();
         var ex = assertThrows(MediaValidationException.class, () -> service.validate(MediaUsage.POST_ATTACHMENT,

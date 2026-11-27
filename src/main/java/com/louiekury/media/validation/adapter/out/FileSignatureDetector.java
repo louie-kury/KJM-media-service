@@ -39,7 +39,8 @@ public class FileSignatureDetector implements MediaContentDetector {
                         for (int j = 8; j < 16; j++) boxSize = (boxSize << 8) | (header[j] & 255L);
                     }
                     if (boxSize >= 0 && position == headerSize) {
-                        if (boxSize < headerSize + 8 || (boxSize - headerSize - 8) % 4 != 0) invalid = true;
+                        if (boxSize < headerSize + 8 || boxSize > MediaType.MP4.getMaxBytes()
+                                || (boxSize - headerSize - 8) % 4 != 0) invalid = true;
                     }
                     if (boxSize < 0 || position > boxSize || position <= headerSize) continue;
                     long offset = position - headerSize - 1;
