@@ -32,7 +32,8 @@ public class S3MediaObjectStorage implements MediaObjectStorage, AutoCloseable {
             client.putObject(request, RequestBody.fromFile(file));
         } catch (S3Exception error) {
             int status = error.statusCode();
-            StorageFailure failure = (status == 409 || status == 412) ? StorageFailure.KEY_CONFLICT
+            StorageFailure failure = status == 412 ? StorageFailure.KEY_CONFLICT
+                    : status == 409 ? StorageFailure.STORAGE_CONCURRENT_CONFLICT
                     : (status >= 400 && status < 500 && status != 408)
                     ? StorageFailure.STORAGE_REJECTED : StorageFailure.STORAGE_OUTCOME_UNKNOWN;
             throw new StorageException(failure, key, error);

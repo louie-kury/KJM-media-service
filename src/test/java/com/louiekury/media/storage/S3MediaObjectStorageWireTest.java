@@ -79,6 +79,36 @@ class S3MediaObjectStorageWireTest {
         } finally { server.stop(0); }
     }
 
+    @Test void distinguishesConditionalConflictRejectionAndUnknownOutcomes() throws Exception {
+        for (Object[] sample : new Object[][] {
+                {409, "STORAGE_CONCURRENT_CONFLICT"}, {412, "KEY_CONFLICT"},
+                {403, "STORAGE_REJECTED"}, {408, "STORAGE_OUTCOME_UNKNOWN"},
+                {500, "STORAGE_OUTCOME_UNKNOWN"}}) {
+            int status = (int) sample[0];
+            var requests = new AtomicInteger();
+            var path = new AtomicReference<String>();
+            var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/", exchange -> {
+                requests.incrementAndGet();
+                path.set(exchange.getRequestURI().getPath());
+                exchange.getRequestBody().readAllBytes();
+                exchange.sendResponseHeaders(status, -1);
+                exchange.close();
+            });
+            server.start();
+            try (var storage = storage(server)) {
+                Path file = directory.resolve("upload-" + status);
+                Files.write(file, new byte[] {1, 2, 3});
+                var failure = assertThrows(StorageException.class,
+                        () -> storage.put("original-key", file, MediaType.PNG, 3));
+                assertEquals(sample[1], failure.getFailure().name(), "HTTP " + status);
+                assertEquals("original-key", failure.getKey());
+                assertEquals("/test-bucket/original-key", path.get());
+                assertEquals(1, requests.get(), "HTTP " + status + " must not be retried");
+            } finally { server.stop(0); }
+        }
+    }
+
     private static S3MediaObjectStorage storage(HttpServer server) {
         return new S3MediaObjectStorage(S3Client.builder()
                 .endpointOverride(URI.create("http://127.0.0.1:" + server.getAddress().getPort()))
