@@ -15,6 +15,7 @@ dependencies {
     implementation 'software.amazon.awssdk:s3:2.59.6'
     testImplementation 'org.junit.jupiter:junit-jupiter:6.0.3'
     testImplementation 'com.adobe.testing:s3mock-junit5:4.9.1'
+    testImplementation 'software.amazon.awssdk:apache-client:2.59.6'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:6.0.3'
 }
 
